@@ -13,16 +13,17 @@ import Control.Applicative
 import Control.Arrow (first)
 import Control.Category ((.))
 import Control.Monad (void, when)
-import Data.Boolean (true, (&&*), (||*))
+import Data.Boolean (notB, true, (&&*), (||*))
 import qualified Data.Foldable as Foldable
 import Data.Label (get)
 import Data.Label.Monadic ((=:), asks)
+import Data.Maybe (isJust)
 import Data.Monoid ((<>), mconcat)
 import qualified Data.Set as Set
-import Data.Text (Text)
+import Data.Text (Text, pack)
 import qualified Data.Text as Text
 import Prelude hiding ((.))
-
+import Data.Traversable (traverse)
 
 
 -- COMMON ABILITIES
@@ -39,7 +40,7 @@ exalted events (Some Battlefield, _) p = return [ mkTrigger p (boostPT r)
         TemporaryLayeredEffect
           { temporaryTimestamp = t
           , temporaryDuration  = UntilEndOfTurn
-          , temporaryEffect    = affectingSelf [ModifyPT (return (1, 1))]
+          , temporaryEffect    = affectingSelf [ModifyPT (\_ -> return (1, 1))]
           }
 exalted _ _ _ = return []
 
@@ -146,7 +147,7 @@ battleflightEagle = mkCard $ do
             { temporaryTimestamp = t
             , temporaryDuration  = UntilEndOfTurn
             , temporaryEffect    = affectingSelf
-                [ModifyPT (return (2, 2)), AddStaticKeywordAbility Flying]
+                [ModifyPT (\_ -> return (2, 2)), AddStaticKeywordAbility Flying]
             }
 
 captainOfTheWatch :: Card
@@ -164,7 +165,7 @@ captainOfTheWatch = mkCard $ do
       { affectedObjects = affectRestOfBattlefield $ \you ->
           isControlledBy you &&* hasTypes (creatureTypes [Soldier])
       , objectModifications = [ AddStaticKeywordAbility Vigilance
-                        , ModifyPT (return (1, 1))]
+                        , ModifyPT (\_ -> return (1, 1))]
       }
 
     trigger = onSelfETB $ \_ p -> mkTrigger p $ do
@@ -215,7 +216,7 @@ divineFavor = mkCard $ do
       mkTrigger you (will (GainLife you 3))
     boostEnchanted = LayeredObjectEffect
       { affectedObjects = affectAttached
-      , objectModifications = [ModifyPT (return (1, 3))]
+      , objectModifications = [ModifyPT (\_ -> return (1, 3))]
       }
 
 erase :: Card
@@ -291,6 +292,20 @@ pacifism = mkCard $ do
                         , RestrictAllowBlocks  selfCantBlock ]
       }
 
+planarCleansing :: Card
+planarCleansing = mkCard $ do
+     name =: Just "Planar Cleansing"
+     types =: sorceryType
+     play =: Just playObject { manaCost = Just [Nothing, Nothing, Nothing, Just White, Just White, Just White],
+         effect = stackSelf destroyAllPermanents }
+   where
+     destroyAllPermanents :: ObjectRef 'TyStackItem -> PlayerRef -> Magic ()
+     destroyAllPermanents _ _ = do
+        objects <- IdList.toList <$> view (asks (battlefield))
+        let objectRefs = map (\pair -> (Battlefield, fst pair)) $ filter (not . hasTypes landType . get objectPart . snd) objects
+        let destructionEffects = map (\objectRef -> DestroyPermanent objectRef true) objectRefs
+        void $ executeEffects $ map Will destructionEffects
+
 pillarfieldOx :: Card
 pillarfieldOx = mkCard $ do
     name =: Just "Pillarfield Ox"
@@ -337,7 +352,7 @@ showOfValor = mkCard $ do
             { temporaryTimestamp = t
             , temporaryDuration  = UntilEndOfTurn
             , temporaryEffect    = affectingSelf
-                [ModifyPT (return (2, 4))]
+                [ModifyPT (\_ -> return (2, 4))]
             }
 
 warFalcon :: Card
@@ -432,7 +447,7 @@ tricksOfTheTrade = mkCard $ do
   where
     boostEnchanted = LayeredObjectEffect
       { affectedObjects = affectAttached
-      , objectModifications = [ModifyPT (return (2, 0)), RestrictAllowBlocks selfCantBeBlocked]
+      , objectModifications = [ModifyPT (\_ -> return (2, 0)), RestrictAllowBlocks selfCantBeBlocked]
       }
 
 
@@ -463,7 +478,7 @@ cripplingBlight = mkCard $ do
   where
     boostEnchanted = LayeredObjectEffect
       { affectedObjects = affectAttached
-      , objectModifications = [ModifyPT (return (-1, -1)), RestrictAllowBlocks selfCantBlock]
+      , objectModifications = [ModifyPT (\_ -> return (-1, -1)), RestrictAllowBlocks selfCantBlock]
       }
 
 darkFavor :: Card
@@ -479,7 +494,7 @@ darkFavor = mkCard $ do
       mkTrigger you (will (LoseLife you 1))
     darkFavorEffect = LayeredObjectEffect
       { affectedObjects = affectAttached
-      , objectModifications = [ModifyPT (return (3, 1))]
+      , objectModifications = [ModifyPT (\_ -> return (3, 1))]
       }
 
 disentomb :: Card
@@ -546,7 +561,7 @@ liliana'sShade = mkCard $ do
         will $ InstallLayeredEffect rSelf TemporaryLayeredEffect
           { temporaryTimestamp = t
           , temporaryDuration  = UntilEndOfTurn
-          , temporaryEffect    = affectingSelf [ModifyPT (return (1, 1))]
+          , temporaryEffect    = affectingSelf [ModifyPT (\_ -> return (1, 1))]
           }
     liliana'sShadeAbility = ActivatedAbility
       { abilityType = ActivatedAb
@@ -590,6 +605,14 @@ tormentedSoul = mkCard $ do
     layeredEffects =: [affectingSelf
       [RestrictAllowBlocks (selfCantBlock &&* selfCantBeBlocked)]]
 
+vampireNighthawk :: Card
+vampireNighthawk = mkCard $ do
+  name  =: Just "Vampire Nighthawk"
+  types =: creatureTypes [Vampire, Shaman]
+  pt    =: Just (2, 3)
+  play  =: Just playObject { manaCost = Just [Nothing, Just Black, Just Black] }
+  staticKeywordAbilities =: [Flying, Deathtouch, Lifelink]
+
 
 -- RED CARDS
 
@@ -608,10 +631,94 @@ fervor = mkCard $ do
       , objectModifications = [AddStaticKeywordAbility Haste]
       }
 
+fireElemental :: Card
+fireElemental = mkCard $ do
+  name  =: Just "Fire Elemental"
+  types =: creatureTypes [Elemental]
+  pt    =: Just (5, 4)
+  play  =: Just playObject
+    { manaCost = Just [Nothing, Nothing, Nothing, Just Red, Just Red] }
+
+firewingPhoenix :: Card
+firewingPhoenix = mkCard $ do
+    name =: Just "Firewing Phoenix"
+    types =: creatureTypes [Phoenix]
+    pt    =: Just (4, 2)
+    staticKeywordAbilities =: [Flying]
+    play =: Just playObject
+      { manaCost = Just [Nothing, Nothing, Nothing, Just Red] }
+    activatedAbilities =: [returnFromGraveyard]
+  where
+    returnFromGraveyard = ActivatedAbility
+      { abilityActivation = defaultActivation
+        { available = availableFromGraveyard
+        , manaCost  = Just [Nothing, Just Red, Just Red, Just Red]
+        , effect    = \(Some (Graveyard zr), i) you -> mkAbility you $ do
+            card <- view (asks (object (Graveyard zr, i)))
+            void $ executeEffect $
+              WillMoveObject (Just (Some (Graveyard you), i)) (Hand you) card
+        }
+      , tapCost     = NoTapCost
+      , abilityType = ActivatedAb
+      }
+
+furnaceWhelp :: Card
+furnaceWhelp = mkCard $ do
+  name =: Just "Furnace Whelp"
+  types =: creatureTypes [Dragon]
+  pt =: Just (2, 2)
+  play =: Just playObject {
+    manaCost = Just [Nothing, Nothing, Just Red, Just Red]
+    }
+  activatedAbilities =: [plusOneAbility]
+  where
+    plusOneAbility = ActivatedAbility
+      { abilityType = ActivatedAb
+      , tapCost = NoTapCost
+      , abilityActivation = defaultActivation
+        { effect = \rSelf you -> mkAbility you $ do
+            t <- tick
+            modifyPTUntilEOT (1, 0) rSelf t
+        , manaCost = Just [Just Red]
+        }
+      }
+
+flamesOfTheFirebrand :: Card
+flamesOfTheFirebrand = mkCard $ do
+  name  =: Just "Flames of the Firebrand"
+  types =: sorceryType
+  play  =: Just playObject
+    { manaCost = Just [Nothing, Nothing, Just Red]
+    , effect = \rSelf you -> do
+        ts <- askTargetsFromUpTo 1 3 you targetCreatureOrPlayer
+        let (trs, _) = evaluateTargetList ts
+        damages <- case length trs of
+          1 -> return [3]
+          3 -> return [1,1,1]
+          2 -> do
+            firstTwo <- askDamage you
+              "Choose the target to deal 2 damage to"
+              (pack $ show $ head trs)
+              (pack $ show $ head $ tail trs)
+            return $ if firstTwo then [2,1] else [1,2]
+        stackTargetSelf rSelf you ts $ \rs stackSelf _ -> do
+          self <- view (asks (objectPart . object stackSelf))
+          void . executeEffects $ zipWith (damageEffect self) damages rs
+    }
+  where
+    damageEffect self dmg t' = case t' of
+        Left r  -> Will $ DamageObject self r dmg False True
+        Right p -> Will $ DamagePlayer self p dmg False True
+    askDamage :: PlayerRef -> Text -> Text -> Text -> Magic Bool
+    askDamage p txt c1 c2 = askQuestion p (AskChoice (Just txt) choices)
+      where
+        choices = [(ChoiceText c1, True), (ChoiceText c2, False)]
+
 moggFlunkies :: Card
 moggFlunkies = mkCard $ do
     name =: Just "Mogg Flunkies"
     types =: creatureTypes [Goblin]
+    pt =: Just (3, 3)
     play =: Just playObject { manaCost = Just [Nothing, Just Red] }
     layeredEffects =: [affectingSelf
       [ RestrictAllowAttacks selfCantAttackAlone
@@ -634,6 +741,78 @@ searingSpear = mkCard $ do
         will $ case t of
           Left r  -> DamageObject self r 3 False True
           Right p -> DamagePlayer self p 3 False True
+
+smelt :: Card
+smelt = mkCard $ do
+    name  =: Just "Smelt"
+    types =: instantType
+    play  =: Just playObject
+      { manaCost = Just [Just Red]
+      , effect = destroyTargetPermanent (hasTypes artifactType)
+      }
+
+thundermawHellkite :: Card
+thundermawHellkite = mkCard $ do
+    name           =: Just "Thundermaw Hellkite"
+    types          =: creatureTypes [Dragon]
+    pt             =: Just (5, 5)
+    play           =: Just playObject
+      { manaCost = Just [Nothing, Nothing, Nothing, Just Red, Just Red]
+      }
+    staticKeywordAbilities =: [Flying, Haste]
+    triggeredAbilities =: onSelfETB thundermawHellkiteTrigger
+  where
+    thundermawHellkiteTrigger :: Contextual (Magic ())
+    thundermawHellkiteTrigger rSelf you = mkTrigger you $ do
+      self <- view (asks (objectBase rSelf))
+      let isAffected = notB (isControlledBy you) &&* hasStaticKeywordAbility Flying
+      objs <- filter (isAffected . get permanentObject . snd) <$> viewZone Battlefield
+      let damage r = DamageObject self r 1 False True
+      let damageAndTap r = [Will (damage r), Will (TapPermanent r)]
+      void . executeEffects $ concatMap damageAndTap (map fst objs)
+
+
+torchFiend :: Card
+torchFiend = mkCard $ do
+    name  =: Just "Torch Fiend"
+    types =: creatureTypes [Devil]
+    pt    =: Just (2, 1)
+    play  =: Just playObject
+      { manaCost = Just [Nothing, Just Red]
+      }
+    activatedAbilities =: [torchFiendAbility]
+  where
+    torchFiendAbility = ActivatedAbility
+      { abilityActivation = torchFiendActivation
+      , abilityType = ActivatedAb
+      , tapCost = NoTapCost
+      }
+    torchFiendActivation = defaultActivation
+      { manaCost = Just [Just Red]
+      , effect = torchFiendEffect
+      }
+    torchFiendEffect :: Contextual (Magic ())
+    torchFiendEffect rSelf@(Some Battlefield, i) you = do
+      ts <- askTarget you $ checkPermanent (hasTypes artifactType) <?> targetPermanent
+      will (Sacrifice (Battlefield, i))
+      mkTargetAbility you ts $ \t ->
+        will $ DestroyPermanent t True
+
+
+trumpetBlast :: Card
+trumpetBlast = mkCard $ do
+    name  =: Just "Trumpet Blast"
+    types =: instantType
+    play  =: Just playObject
+      { manaCost = Just [Nothing, Nothing, Just Red]
+      , effect = stackSelf titanicGrowthEffect
+      }
+  where
+    titanicGrowthEffect _rSelf _you = do
+      let isAttacking = isJust . get attacking
+      objs <- map fst . filter (isAttacking . snd) <$> viewZone Battlefield
+      t <- tick
+      void $ traverse (\(r, i) -> modifyPTUntilEOT (2, 0) (Some r, i) t) objs
 
 
 -- GREEN CARDS
@@ -737,7 +916,7 @@ elvishArchdruid = mkCard $ do
     boostYourElves = LayeredObjectEffect
       { affectedObjects = affectRestOfBattlefield $ \you ->
           isControlledBy you &&* hasTypes (creatureTypes [Elf])
-      , objectModifications = [ModifyPT (return (1, 1))]
+      , objectModifications = [ModifyPT (\_ -> return (1, 1))]
       }
 
 elvishVisionary :: Card
@@ -970,6 +1149,31 @@ spikedBaloth = mkCard $ do
   pt =: Just (4, 2)
   staticKeywordAbilities =: [Trample]
 
+timberpackWolf :: Card
+timberpackWolf = mkCard $ do
+  name  =: Just "Timberpack Wolf"
+  types =: creatureTypes [Wolf]
+  play  =: Just playObject { manaCost = Just [Nothing, Just Green] }
+  pt    =: Just (2, 2)
+  layeredEffects =: [updatePT]
+  where
+    updatePT :: LayeredEffect
+    updatePT =  LayeredObjectEffect
+      { affectedObjects = affectMyselfOnBattlefield
+      , objectModifications = [ModifyPT $ \rSelf ->
+          do
+            you <- view (asks (controller . objectBase rSelf))
+            let isMyWolf = isControlledBy you &&* hasName "Timberpack Wolf"
+            wolves <- IdList.filter (isMyWolf . get objectPart) <$> view (asks battlefield)
+            let factor = length wolves - 1 -- subtract this current creature
+            return (factor, factor)]
+      }
+
+    affectMyselfOnBattlefield :: Contextual (View [SomeObjectRef])
+    affectMyselfOnBattlefield r@(Some Battlefield, _) you = return [r]
+    affectMyselfOnBattlefield _                       _   = return []
+
+
 titanicGrowth :: Card
 titanicGrowth = mkCard $ do
     name =: Just "Titanic Growth"
@@ -1106,7 +1310,7 @@ modifyPTUntilEOT pt' ref t = will $
   InstallLayeredEffect ref TemporaryLayeredEffect
     { temporaryTimestamp = t
     , temporaryDuration  = UntilEndOfTurn
-    , temporaryEffect    = affectingSelf [ModifyPT (return pt')]
+    , temporaryEffect    = affectingSelf [ModifyPT (\_ -> return pt')]
     }
 
 destroyTargetPermanent :: (Object -> Bool) -> Contextual (Magic ())
@@ -1124,3 +1328,8 @@ simpleCreatureToken t you tys cs pt' =
   , _types = creatureTypes tys
   , _pt = Just pt'
   }
+
+viewZone :: ZoneRef ty -> Magic [(ObjectRef ty, ObjectOfType ty)]
+viewZone zoneRef = do
+    idListEls <- IdList.toList <$> view (asks (compileZoneRef zoneRef))
+    return [ ((zoneRef, i), o)| (i, o) <- idListEls ]

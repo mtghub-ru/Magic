@@ -17,52 +17,65 @@ Magic is a big game. This implementation targets only a specific part of it.
 For now, only two-player games and only cards, rules, card types and abilities
 available and relevant in the Magic 2013 core set are targeted.
 
-A good indication of the current progress is to open [module M13](/Magic-Cards/src/Magic/M13.hs) and see how many M13 cards have been implemented yet. A list of issues to be fixed before the whole of M13 can be implemented can be [found on GitHub](https://github.com/MedeaMelana/Magic/issues/milestones).
+A good indication of the current progress is to open [module M13](/Magic-Cards/src/Magic/M13.hs) and see how many M13 cards have been implemented yet. A list of issues to be fixed before the whole of M13 can be implemented can be [found on GitHub](https://github.com/MedeaMelana/Magic/milestone/1).
 
 There is also a command-line interface that allows you to play the game. To run it, follow the installation instructions below and run the executable that it produced by building `Magic-CLI`. This will run a two-player game with preselected decks.
 
-## Building
+## Building with cabal
 
-You need [GHC 7.8](http://www.haskell.org/ghc/download_ghc_7_8_2) or greater and [cabal-install 1.20](http://www.haskell.org/cabal/download.html) or greater to build Magic.
+You need [GHC 7.8](http://www.haskell.org/ghc/download_ghc_7_8_2) or greater and [cabal-install 1.24](http://www.haskell.org/cabal/download.html) or greater to build Magic.
 
-Clone the repository and create Cabal sandboxes for the projects in dependency order:
+Clone the repository and create a Cabal sandbox:
 
 ```
 $ git clone git@github.com:MedeaMelana/Magic.git
-$ cd REPO/Magic
+$ cd Magic
 $ cabal sandbox init
-$ cabal install --dependencies-only
-$ cabal build
-$ cd REPO/Magic-Cards
-$ cabal sandbox init
-$ cabal sandbox add-source ../Magic
-$ cabal install --dependencies-only
-$ cabal build
-```
-
-If you want to run the web server:
-
-```
-$ cd REPO/Magic-Web-Server
-$ cabal sandbox init
-$ cabal sandbox add-source ../Magic
-$ cabal sandbox add-source ../Magic-Cards
-$ cabal install --dependencies-only
-$ cabal build
-$ dist/build/magic-web-server/magic-web-server
 ```
 
 If you want to run the command-line interface:
 
 ```
-$ cd REPO/Magic-CLI
-$ cabal sandbox init
-$ cabal sandbox add-source ../Magic
-$ cabal sandbox add-source ../Magic-Cards
-$ cabal install --dependencies-only
-$ cabal build
-$ dist/build/magic-cli/magic-cli
+$ cabal new-build Magic-CLI
+$ dist-newstyle/build/Magic-CLI-*/build/magic-cli/magic-cli
 ```
+
+If you want to run the web server:
+
+```
+$ cabal new-build Magic-Web-Server
+$ dist-newstyle/build/Magic-Web-Server-*/build/magic-web-server/magic-web-server
+```
+
+## Building with stack
+
+You need the newest version of [stack](https://github.com/commercialhaskell/stack/blob/master/doc/GUIDE.md) to build Magic.
+Clone the repository.
+
+```
+$ git clone git@github.com:MedeaMelana/Magic.git
+$ cd Magic/Magic && stack build
+$ cd ../../Magic/Magic-Cards && stack build
+```
+
+If you want to run the command-line:
+
+```
+$ cd Magic/Magic-Cards
+$ stack build
+$ stack exec magic-cli
+```
+
+If you want to run the web server:
+
+```
+$ cd Magic/Magic-Web-Server
+$ stack build
+$ stack exec magic-web-server
+```
+
+**Info for NixOS users**: Please use the `nix-shell` to download the newest `stack` version
+
 
 ## Talking to the web server
 
